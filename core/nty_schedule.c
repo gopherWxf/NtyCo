@@ -39,6 +39,7 @@ void nty_schedule_free(nty_schedule *sched) {
     free(sched);
     assert(pthread_setspecific(global_sched_key, NULL) == 0);
 }
+
 // 创建调度器
 int nty_schedule_create(int stack_size) {
     int sched_stack_size = stack_size ? stack_size : NTY_CO_MAX_STACKSIZE;
@@ -73,6 +74,7 @@ int nty_schedule_create(int stack_size) {
 
     bzero(&sched->ctx, sizeof(nty_cpu_ctx));
 }
+
 //加入sleep集合，添加sleep状态（不会走这里的）
 void nty_schedule_sched_sleepdown(nty_coroutine *co, uint64_t msecs) {
     uint64_t usecs = msecs * 1000u;
@@ -95,6 +97,7 @@ void nty_schedule_sched_sleepdown(nty_coroutine *co, uint64_t msecs) {
     }
     //yield
 }
+
 //加入wait集合，添加wait状态
 void nty_schedule_sched_wait(nty_coroutine *co, int fd, uint32_t events, uint64_t timeout) {
     if (co->status & BIT(NTY_COROUTINE_STATUS_WAIT_READ) || co->status & BIT(NTY_COROUTINE_STATUS_WAIT_WRITE)) {
@@ -116,7 +119,6 @@ void nty_schedule_sched_wait(nty_coroutine *co, int fd, uint32_t events, uint64_
     co->events = events;
     //加入waiting集合
     nty_coroutine *co_tmp = RB_INSERT(_nty_coroutine_rbtree_wait, &co->sched->waiting, co);
-
     assert(co_tmp == NULL);
     //这里其实限死了都会return的，不会走下面的函数
     if (timeout == 1) {
@@ -125,6 +127,7 @@ void nty_schedule_sched_wait(nty_coroutine *co, int fd, uint32_t events, uint64_
     //加入sleep集合，添加sleep状态（不会走这里的）
     nty_schedule_sched_sleepdown(co, timeout);
 }
+
 //移除wait集合，移除wait状态
 nty_coroutine *nty_schedule_desched_wait(int fd) {
     nty_coroutine find_it = {0};
@@ -134,25 +137,29 @@ nty_coroutine *nty_schedule_desched_wait(int fd) {
     if (co != NULL) {
         RB_REMOVE(_nty_coroutine_rbtree_wait, &co->sched->waiting, co);
     }
+
     co->status &= CLEARBIT(NTY_COROUTINE_STATUS_WAIT_READ);
     co->status &= CLEARBIT(NTY_COROUTINE_STATUS_WAIT_WRITE);
     nty_schedule_desched_sleepdown(co);
+
     return co;
 }
+
 //移除sleep集合，移除sleep状态
 void nty_schedule_desched_sleepdown(nty_coroutine *co) {
     if (co->status & BIT(NTY_COROUTINE_STATUS_SLEEPING)) {
         RB_REMOVE(_nty_coroutine_rbtree_sleep, &co->sched->sleeping, co);
         co->status &= CLEARBIT(NTY_COROUTINE_STATUS_SLEEPING);
-        co->status |= BIT(NTY_COROUTINE_STATUS_READY);
     }
 }
+
 // 判读集合中是否还有协程
 static inline int nty_schedule_isdone(nty_schedule *sched) {
     return (RB_EMPTY(&sched->waiting) &&
             RB_EMPTY(&sched->sleeping) &&
             TAILQ_EMPTY(&sched->ready));
 }
+
 //从sleep集合中取出超时的协程
 static nty_coroutine *nty_schedule_expired(nty_schedule *sched) {
     uint64_t t_diff_usecs = nty_coroutine_diff_usecs(sched->birth, nty_coroutine_usec_now());
@@ -164,6 +171,7 @@ static nty_coroutine *nty_schedule_expired(nty_schedule *sched) {
     }
     return NULL;
 }
+
 // 最小超时了多久
 static uint64_t nty_schedule_min_timeout(nty_schedule *sched) {
     uint64_t t_diff_usecs = nty_coroutine_diff_usecs(sched->birth, nty_coroutine_usec_now());
@@ -176,6 +184,7 @@ static uint64_t nty_schedule_min_timeout(nty_schedule *sched) {
     }
     return 0;
 }
+
 // 调度器调度epoll_wait
 static int nty_schedule_epoll(nty_schedule *sched) {
     sched->num_new_events = 0;
@@ -209,14 +218,17 @@ static int nty_schedule_epoll(nty_schedule *sched) {
     sched->num_new_events = nready;
     return 0;
 }
+
 //找一个wait状态的协程
 nty_coroutine *nty_schedule_search_wait(int fd) {
     nty_coroutine find_it = {0};
     find_it.fd = fd;
     nty_schedule * sched = nty_coroutine_get_sched();
     nty_coroutine *co = RB_FIND(_nty_coroutine_rbtree_wait, &sched->waiting, &find_it);
+    co->status = 0;
     return co;
 }
+
 //schedule loop
 void nty_schedule_run(void) {
     nty_schedule * sched = nty_coroutine_get_sched();

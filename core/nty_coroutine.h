@@ -25,7 +25,7 @@
 #include "nty_tree.h"
 
 #define NTY_CO_MAX_EVENTS        (1024*1024)
-#define NTY_CO_MAX_STACKSIZE    (4*1024)
+#define NTY_CO_MAX_STACKSIZE    (2*1024)
 
 #define BIT(x)                    (1 << (x))
 #define CLEARBIT(x)            ~(1 << (x))
@@ -202,6 +202,8 @@ int nty_epoller_create(void);
 int nty_epoller_wait(struct timespec t);
 
 int nty_epoller_ev_register_trigger();
+
+void catstatus(int status);
 
 #endif //NTYCO_NTY_COROUTINE_H
 

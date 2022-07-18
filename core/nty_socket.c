@@ -95,14 +95,25 @@ ssize_t nty_recv(int fd, void *buf, size_t len, int flags) {
 
 // 创建协程send接口
 ssize_t nty_send(int fd, const void *buf, size_t len, int flags) {
-    struct epoll_event ev;
-    ev.events = POLLOUT | POLLERR | POLLHUP;
-    ev.data.fd = fd;
-    //加入epoll，然后yield
-    nty_epoll_inner(&ev, 1, 1);
-    //resume
-    ssize_t ret = send(fd, ((char *) buf), len, flags);
-    return ret;
+    int sent = 0;
+    int ret = send(fd, ((char *) buf) + sent, len - sent, flags);
+    if (ret == 0) return ret;
+    if (ret > 0) sent += ret;
+    while (sent < len) {
+        struct epoll_event ev;
+        ev.events = POLLOUT | POLLERR | POLLHUP;
+        ev.data.fd = fd;
+        //加入epoll，然后yield
+        nty_epoll_inner(&ev, 1, 1);
+        ret = send(fd, ((char *) buf) + sent, len - sent, flags);
+        //printf("send --> len : %d\n", ret);
+        if (ret <= 0) {
+            break;
+        }
+        sent += ret;
+    }
+    if (ret <= 0 && sent == 0) return ret;
+    return sent;
 }
 
 // 创建协程close接口
@@ -133,13 +144,25 @@ int nty_connect(int fd, struct sockaddr *name, socklen_t len) {
 }
 // 创建协程sendto接口
 ssize_t nty_sendto(int fd, const void *buf, size_t len, int flags, const struct sockaddr *dest_addr, socklen_t addrlen) {
-    struct epoll_event ev;
-    ev.events = POLLOUT | POLLERR | POLLHUP;
-    ev.data.fd = fd;
-    //加入epoll，然后yield
-    nty_epoll_inner(&ev, 1, 1);
-    int ret = sendto(fd, ((char *) buf) , len , flags, dest_addr, addrlen);
-    return ret;
+    int sent = 0;
+    while (sent < len) {
+        struct epoll_event ev;
+        ev.events = POLLOUT | POLLERR | POLLHUP;
+        ev.data.fd = fd;
+        //加入epoll，然后yield
+        nty_epoll_inner(&ev, 1, 1);
+        int ret = sendto(fd, ((char*)buf)+sent, len-sent, flags, dest_addr, addrlen);
+        if (ret <= 0) {
+            if (errno == EAGAIN) continue;
+            else if (errno == ECONNRESET) {
+                return ret;
+            }
+            printf("send errno : %d, ret : %d\n", errno, ret);
+            assert(0);
+        }
+        sent += ret;
+    }
+    return sent;
 }
 // 创建协程srecvfrom接口
 ssize_t nty_recvfrom(int fd, void *buf, size_t len, int flags, struct sockaddr *src_addr, socklen_t *addrlen) {
